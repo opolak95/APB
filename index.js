@@ -1,7 +1,18 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Events,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder
+} = require('discord.js');
 const eventPresets = require('./config/events');
 const { saveEvent, archiveEvent } = require('./db/database');
+
+const CHANNEL_ID = process.env.CHANNEL_ID;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -53,7 +64,15 @@ client.on(Events.InteractionCreate, async interaction => {
       rows.push(row);
 
       saveEvent(activeEvent);
-      await interaction.reply({ embeds: [embed], components: rows });
+
+      try {
+        const channel = await client.channels.fetch(CHANNEL_ID);
+        await channel.send({ embeds: [embed], components: rows });
+        await interaction.reply({ content: '✅ Event byl odeslán do kanálu.', ephemeral: true });
+      } catch (err) {
+        console.error('❌ Nelze odeslat zprávu do kanálu:', err);
+        await interaction.reply({ content: '❌ Nepodařilo se odeslat zprávu do kanálu.', ephemeral: true });
+      }
     }
   }
 
