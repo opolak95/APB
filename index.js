@@ -7,12 +7,16 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder
+  EmbedBuilder,
+  REST,
+  Routes,
+  SlashCommandBuilder
 } = require('discord.js');
 const eventPresets = require('./config/events');
 const { saveEvent, archiveEvent } = require('./db/database');
 
 const CHANNEL_ID = process.env.CHANNEL_ID;
+const CLIENT_ID = process.env.CLIENT_ID;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -30,12 +34,53 @@ process.on('uncaughtException', error => {
   console.error('🔴 Nezachycená výjimka:', error);
 });
 
+// 👉 Registrace slash příkazů při spuštění
+async function registerSlashCommands() {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('create')
+      .setDescription('Vytvoří nový Albion event')
+      .addStringOption(option =>
+        option.setName('type')
+          .setDescription('Typ eventu')
+          .setRequired(true)
+          .addChoices(
+            { name: 'ZvZ', value: 'ZvZ' },
+            { name: 'SS', value: 'SS' },
+            { name: 'Dungeon', value: 'Dungeon' },
+            { name: 'Faction', value: 'Faction' },
+            { name: 'Ganking', value: 'Ganking' },
+            { name: 'Arena', value: 'Arena' },
+            { name: 'Training', value: 'Training' },
+            { name: 'HCE', value: 'HCE' },
+            { name: 'Gathering', value: 'Gathering' }
+          )
+      )
+      .toJSON()
+  ];
+
+  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
+
+  try {
+    console.log('🔧 Registruji slash příkazy...');
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commands }
+    );
+    console.log('✅ Slash příkazy zaregistrovány!');
+  } catch (error) {
+    console.error('❌ Chyba při registraci příkazů:', error);
+  }
+}
+
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Bot přihlášen jako ${client.user.tag}`);
 
+  await registerSlashCommands();
+
   try {
     const channel = await client.channels.fetch(CHANNEL_ID);
-    await channel.send('✅ Jsem online a připraven sloužit Přátelům Hranatého Stolu!');
+    await channel.send('✅ Jsem online a slash příkazy byly zaregistrovány.');
     console.log('📨 Potvrzení odesláno do kanálu.');
   } catch (err) {
     console.error('❌ Nepodařilo se odeslat zprávu do kanálu:', err);
