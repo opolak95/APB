@@ -22,11 +22,26 @@ const client = new Client({
 let activeEvent = null;
 let expiresAt = null;
 
+// Globální zachytávání všech chyb
+process.on('unhandledRejection', error => {
+  console.error('🔴 Nezachycená chyba (promise):', error);
+});
+process.on('uncaughtException', error => {
+  console.error('🔴 Nezachycená výjimka:', error);
+});
+
 client.once(Events.ClientReady, () => {
   console.log(`✅ Bot přihlášen jako ${client.user.tag}`);
 });
 
 client.on(Events.InteractionCreate, async interaction => {
+  console.log('📩 ZACHYCENÁ INTERAKCE:', {
+    type: interaction.type,
+    isChatInput: interaction.isChatInputCommand(),
+    command: interaction.commandName,
+    user: interaction.user?.tag
+  });
+
   if (interaction.isChatInputCommand()) {
     console.log(`📥 Slash příkaz: /${interaction.commandName} od ${interaction.user.tag}`);
 
