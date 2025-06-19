@@ -1,186 +1,156 @@
+// index.js
 require('dotenv').config();
-const {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  Events,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
-} = require('discord.js');
-const eventPresets = require('./config/events');
+const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 const { saveEvent, archiveEvent } = require('./db/database');
-
-const CHANNEL_ID = process.env.CHANNEL_ID;
+const eventPresets = require('./config/events');
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   partials: [Partials.Message, Partials.Channel]
 });
 
+const CHANNEL_ID = process.env.CHANNEL_ID;
 let activeEvent = null;
 let expiresAt = null;
 
-process.on('unhandledRejection', error => {
-  console.error('🔴 Nezachycená chyba (promise):', error);
-});
-process.on('uncaughtException', error => {
-  console.error('🔴 Nezachycená výjimka:', error);
-});
-
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Bot přihlášen jako ${client.user.tag}`);
-  try {
-    const channel = await client.channels.fetch(CHANNEL_ID);
-    await channel.send('✅ Jsem online a připraven sloužit Přátelům Hranatého Stolu!');
-    console.log('📨 Potvrzení odesláno do kanálu.');
-  } catch (err) {
-    console.error('❌ Nepodařilo se odeslat zprávu do kanálu:', err);
-  }
+  const channel = await client.channels.fetch(CHANNEL_ID);
+  await channel.send('✅ Jsem online a slash příkazy byly zaregistrovány.');
 });
 
 client.on(Events.InteractionCreate, async interaction => {
-  console.log('📩 ZACHYCENÁ INTERAKCE:', {
-    type: interaction.type,
-    isChatInput: interaction.isChatInputCommand(),
-    command: interaction.commandName,
-    user: interaction.user?.tag
-  });
+  if (interaction.isChatInputCommand() && interaction.commandName === 'create') {
+    const modal = new ModalBuilder()
+      .setCustomId('event_details')
+      .setTitle('Nový Albion Event');
 
-  if (!interaction.isChatInputCommand()) return;
+    const dateInput = new TextInputBuilder()
+      .setCustomId('event_date')
+      .setLabel('Datum (např. 20. 6. 2025)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
 
-  if (interaction.commandName === 'create') {
-    try {
-      await interaction.deferReply({ flags: 1 << 6 });
+    const timeInput = new TextInputBuilder()
+      .setCustomId('event_time')
+      .setLabel('Čas (např. 20:00)')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
 
-      const type = interaction.options.getString('type');
-      console.log(`📦 Zvolený typ eventu: ${type}`);
-      const preset = eventPresets[type.toLowerCase()];
+    const locationInput = new TextInputBuilder()
+      .setCustomId('event_location')
+      .setLabel('Startovací lokace')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
 
-      if (!preset) {
-        console.warn(`❌ Neplatný typ eventu: ${type}`);
-        return interaction.editReply({ content: '❌ Neplatný typ eventu.' });
-      }
+    const row1 = new ActionRowBuilder().addComponents(dateInput);
+    const row2 = new ActionRowBuilder().addComponents(timeInput);
+    const row3 = new ActionRowBuilder().addComponents(locationInput);
 
-      const embed = new EmbedBuilder()
-        .setTitle(preset.title)
-        .setDescription(preset.description)
-        .setColor(0x0099ff);
+    modal.addComponents(row1, row2, row3);
+    await interaction.showModal(modal);
+  }
 
-      const registrations = {};
-      preset.roles.forEach(role => {
-        registrations[role.name] = [];
-      });
+  if (interaction.isModalSubmit() && interaction.customId === 'event_details') {
+    const date = interaction.fields.getTextInputValue('event_date');
+    const time = interaction.fields.getTextInputValue('event_time');
+    const location = interaction.fields.getTextInputValue('event_location');
 
-      const rows = [];
-      let currentRow = new ActionRowBuilder();
-      let count = 0;
-      preset.roles.forEach(role => {
-        if (count === 5) {
-          rows.push(currentRow);
-          currentRow = new ActionRowBuilder();
-          count = 0;
-        }
-        currentRow.addComponents(
-          new ButtonBuilder()
-            .setCustomId(`role_${role.name}`)
-            .setLabel(role.name)
-            .setStyle(ButtonStyle.Primary)
-        );
-        count++;
-      });
+    const preset = require('./config/events').ss; // TEMP: hardcoded "ss" type
 
-      currentRow.addComponents(
+    const embed = new EmbedBuilder()
+      .setTitle(preset.title)
+      .setDescription(preset.description)
+      .addFields(
+        { name: '📅 Datum', value: date, inline: true },
+        { name: '⏰ Čas', value: time, inline: true },
+        { name: '📍 Lokace', value: location, inline: true }
+      )
+      .setColor(0x0099ff);
+
+    const rows = [];
+    const registrations = {};
+    preset.roles.forEach(role => {
+      registrations[role.name] = [];
+      embed.addFields({ name: `${role.name} (0/${role.max})`, value: '*nikdo*', inline: true });
+    });
+
+    activeEvent = { preset, registrations, createdAt: Date.now(), createdBy: interaction.user.id, meta: { date, time, location } };
+    expiresAt = Date.now() + 60 * 60 * 1000;
+
+    const roleButtons = new ActionRowBuilder();
+    preset.roles.slice(0, 5).forEach(role => {
+      roleButtons.addComponents(
         new ButtonBuilder()
-          .setCustomId('leave_event')
-          .setLabel('Zrušit účast')
-          .setStyle(ButtonStyle.Danger)
+          .setCustomId(`join_${role.name}`)
+          .setLabel(role.name)
+          .setStyle(ButtonStyle.Primary)
       );
-      rows.push(currentRow);
+    });
 
-      activeEvent = {
-        preset,
-        registrations,
-        createdAt: Date.now(),
-        createdBy: interaction.user.id,
-        type
-      };
-      expiresAt = Date.now() + 60 * 60 * 1000;
+    const statusButtons = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder().setCustomId('maybe').setLabel('⚪ Možná').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('decline').setLabel('❌ Nezúčastním se').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('leave').setLabel('Zrušit účast').setStyle(ButtonStyle.Danger)
+      );
 
-      saveEvent(activeEvent);
-      console.log('💾 Event uložen do DB.');
-
-      const channel = await client.channels.fetch(CHANNEL_ID);
-      await channel.send({ embeds: [embed], components: rows });
-      console.log(`📨 Embed odeslán do kanálu ${CHANNEL_ID}`);
-
-      await interaction.editReply({ content: '✅ Event vytvořen a zveřejněn v kanálu.' });
-    } catch (error) {
-      console.error('❗ Chyba při vytváření eventu:', error);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '❌ Nastala chyba při vytváření eventu.' });
-      } else {
-        await interaction.reply({ content: '❌ Nastala chyba při vytváření eventu.', ephemeral: true });
-      }
-    }
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    await channel.send({ embeds: [embed], components: [roleButtons, statusButtons] });
+    await interaction.reply({ content: '✅ Event vytvořen!', ephemeral: true });
   }
-});
 
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isButton()) return;
-  if (!activeEvent) return interaction.reply({ content: '❌ Žádný aktivní event.', ephemeral: true });
+  if (interaction.isButton()) {
+    if (!activeEvent) return interaction.reply({ content: '❌ Žádný aktivní event.', ephemeral: true });
 
-  try {
     const user = interaction.user;
-    const roleName = interaction.customId.replace('role_', '');
-    const { registrations, preset } = activeEvent;
+    const action = interaction.customId;
+    const { preset, registrations } = activeEvent;
 
-    console.log(`👤 ${user.tag} klikl na tlačítko: ${interaction.customId}`);
+    Object.keys(registrations).forEach(role => {
+      registrations[role] = registrations[role].filter(u => u.id !== user.id);
+    });
 
-    if (interaction.customId === 'leave_event') {
-      let removed = false;
-      for (const role in registrations) {
-        const index = registrations[role].findIndex(u => u.id === user.id);
-        if (index !== -1) {
-          registrations[role].splice(index, 1);
-          removed = true;
-        }
-      }
-      if (!removed) return interaction.reply({ content: '❌ Nejsi přihlášen.', ephemeral: true });
-    } else {
-      const alreadyRegistered = Object.values(registrations).some(list =>
-        list.find(u => u.id === user.id)
-      );
-      if (alreadyRegistered) return interaction.reply({ content: '⚠️ Už jsi přihlášen.', ephemeral: true });
-
+    if (action.startsWith('join_')) {
+      const roleName = action.replace('join_', '');
       const role = preset.roles.find(r => r.name === roleName);
-      if (!role) return interaction.reply({ content: '❌ Neplatná role.', ephemeral: true });
-
       if (registrations[roleName].length >= role.max) {
         return interaction.reply({ content: '⚠️ Tato role je již plná.', ephemeral: true });
       }
-
       registrations[roleName].push({ id: user.id, name: user.username });
+    }
+    if (action === 'maybe') {
+      if (!registrations['Možná']) registrations['Možná'] = [];
+      registrations['Možná'].push({ id: user.id, name: user.username });
+    }
+    if (action === 'decline') {
+      if (!registrations['Nezúčastním se']) registrations['Nezúčastním se'] = [];
+      registrations['Nezúčastním se'].push({ id: user.id, name: user.username });
     }
 
     const embed = new EmbedBuilder()
       .setTitle(preset.title)
       .setDescription(preset.description)
+      .addFields(
+        { name: '📅 Datum', value: activeEvent.meta.date, inline: true },
+        { name: '⏰ Čas', value: activeEvent.meta.time, inline: true },
+        { name: '📍 Lokace', value: activeEvent.meta.location, inline: true }
+      )
       .setColor(0x00ff00);
 
     preset.roles.forEach(role => {
       const players = registrations[role.name].map(u => `<@${u.id}>`).join(', ') || '*nikdo*';
-      embed.addFields({
-        name: `${role.name} (${registrations[role.name].length}/${role.max})`,
-        value: players
-      });
+      embed.addFields({ name: `${role.name} (${registrations[role.name].length}/${role.max})`, value: players });
     });
 
-    await interaction.update({ embeds: [embed], components: interaction.message.components });
-    console.log(`🔄 Embed aktualizován po akci uživatele ${user.tag}`);
-  } catch (error) {
-    console.error('❗ Chyba při zpracování tlačítka:', error);
+    ['Možná', 'Nezúčastním se'].forEach(status => {
+      if (registrations[status]) {
+        const list = registrations[status].map(u => `<@${u.id}>`).join(', ') || '*nikdo*';
+        embed.addFields({ name: status, value: list });
+      }
+    });
+
+    await interaction.update({ embeds: [embed] });
   }
 });
 
