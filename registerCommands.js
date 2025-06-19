@@ -2,13 +2,12 @@
 require('dotenv').config();
 const { REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-// Definice slash příkazu
 const commands = [
   new SlashCommandBuilder()
     .setName('create')
     .setDescription('Vytvoří nový Albion Online event')
-    .addStringOption(option =>
-      option
+    .addStringOption(opt =>
+      opt
         .setName('type')
         .setDescription('Typ eventu')
         .setRequired(true)
@@ -24,18 +23,16 @@ const commands = [
     .toJSON()
 ];
 
-const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
-
 (async () => {
+  const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
   try {
-    console.log('⏳ Registruji slash příkazy...');
-    // Pro rychlé testování můžeš použít applicationGuildCommands místo applicationCommands
+    console.log('⏳ Registruji slash příkazy…');
     await rest.put(
       Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commands }
     );
     console.log('✅ Slash příkazy zaregistrovány!');
-  } catch (error) {
-    console.error('❌ Chyba při registraci slash příkazů:', error);
+  } catch (err) {
+    console.error('❌ Chyba při registraci slash příkazů:', err);
   }
 })();
