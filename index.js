@@ -145,4 +145,20 @@ client.on(Events.InteractionCreate, async interaction => {
       });
 
       await interaction.update({ embeds: [embed] });
-      console.log(`🔄 Embed aktualizován po ak
+      console.log(`🔄 Embed aktualizován po akci uživatele ${user.tag}`);
+    } catch (error) {
+      console.error('❗ Chyba při zpracování tlačítka:', error);
+    }
+  }
+});
+
+setInterval(async () => {
+  if (activeEvent && Date.now() > expiresAt) {
+    console.log('⌛ Event vypršel, archivace...');
+    await archiveEvent(activeEvent);
+    activeEvent = null;
+    expiresAt = null;
+  }
+}, 60000);
+
+client.login(process.env.BOT_TOKEN);
