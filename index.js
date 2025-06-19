@@ -1,11 +1,23 @@
 // index.js
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Events,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
+} = require('discord.js');
 const { saveEvent, archiveEvent } = require('./db/database');
 const eventPresets = require('./config/events');
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   partials: [Partials.Message, Partials.Channel]
 });
 
@@ -20,43 +32,55 @@ client.once(Events.ClientReady, async () => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
+  // /create spustí modal
   if (interaction.isChatInputCommand() && interaction.commandName === 'create') {
     const modal = new ModalBuilder()
       .setCustomId('event_details')
       .setTitle('Nový Albion Event');
 
-    const dateInput = new TextInputBuilder()
-      .setCustomId('event_date')
-      .setLabel('Datum (např. 20. 6. 2025)')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('event_type')
+          .setLabel('Typ eventu (např. ss, zvz, faction...)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('event_date')
+          .setLabel('Datum (např. 20. 6. 2025)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('event_time')
+          .setLabel('Čas (např. 20:00)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('event_location')
+          .setLabel('Startovací lokace')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+      )
+    );
 
-    const timeInput = new TextInputBuilder()
-      .setCustomId('event_time')
-      .setLabel('Čas (např. 20:00)')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-
-    const locationInput = new TextInputBuilder()
-      .setCustomId('event_location')
-      .setLabel('Startovací lokace')
-      .setStyle(TextInputStyle.Short)
-      .setRequired(true);
-
-    const row1 = new ActionRowBuilder().addComponents(dateInput);
-    const row2 = new ActionRowBuilder().addComponents(timeInput);
-    const row3 = new ActionRowBuilder().addComponents(locationInput);
-
-    modal.addComponents(row1, row2, row3);
     await interaction.showModal(modal);
   }
 
+  // Zpracování modalu
   if (interaction.isModalSubmit() && interaction.customId === 'event_details') {
+    const type = interaction.fields.getTextInputValue('event_type').toLowerCase();
     const date = interaction.fields.getTextInputValue('event_date');
     const time = interaction.fields.getTextInputValue('event_time');
     const location = interaction.fields.getTextInputValue('event_location');
 
-    const preset = require('./config/events').ss; // TEMP: hardcoded "ss" type
+    const preset = eventPresets[type];
+    if (!preset) return interaction.reply({ content: '❌ Neplatný typ eventu.', ephemeral: true });
 
     const embed = new EmbedBuilder()
       .setTitle(preset.title)
@@ -68,14 +92,20 @@ client.on(Events.InteractionCreate, async interaction => {
       )
       .setColor(0x0099ff);
 
-    const rows = [];
     const registrations = {};
     preset.roles.forEach(role => {
       registrations[role.name] = [];
       embed.addFields({ name: `${role.name} (0/${role.max})`, value: '*nikdo*', inline: true });
     });
 
-    activeEvent = { preset, registrations, createdAt: Date.now(), createdBy: interaction.user.id, meta: { date, time, location } };
+    activeEvent = {
+      preset,
+      registrations,
+      createdAt: Date.now(),
+      createdBy: interaction.user.id,
+      meta: { date, time, location },
+      type
+    };
     expiresAt = Date.now() + 60 * 60 * 1000;
 
     const roleButtons = new ActionRowBuilder();
@@ -100,6 +130,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.reply({ content: '✅ Event vytvořen!', ephemeral: true });
   }
 
+  // Zpracování tlačítek
   if (interaction.isButton()) {
     if (!activeEvent) return interaction.reply({ content: '❌ Žádný aktivní event.', ephemeral: true });
 
@@ -154,6 +185,7 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
+// Archivace po expiraci
 setInterval(async () => {
   if (activeEvent && Date.now() > expiresAt) {
     console.log('⌛ Event vypršel, archivace...');
