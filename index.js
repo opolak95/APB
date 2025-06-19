@@ -99,9 +99,8 @@ client.on(Events.InteractionCreate, async interaction => {
     console.log(`📥 Slash příkaz: /${interaction.commandName} od ${interaction.user.tag}`);
 
     if (interaction.commandName === 'create') {
+      await interaction.deferReply({ flags: 64 }); // ephemeral reply (flags method)
       try {
-        await interaction.deferReply({ ephemeral: true });
-
         const type = interaction.options.getString('type');
         console.log(`📦 Zvolený typ eventu: ${type}`);
         const preset = eventPresets[type];
@@ -158,7 +157,16 @@ client.on(Events.InteractionCreate, async interaction => {
         await interaction.editReply({ content: '✅ Event vytvořen a zveřejněn v kanálu.' });
       } catch (error) {
         console.error('❗ Chyba při vytváření eventu:', error);
-        interaction.editReply({ content: '❌ Nastala chyba při vytváření eventu.' });
+
+        try {
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: '❌ Nastala chyba při vytváření eventu.' });
+          } else {
+            await interaction.reply({ content: '❌ Chyba bez odpovědi.', ephemeral: true });
+          }
+        } catch (replyError) {
+          console.error('❌ Nepodařilo se odpovědět na chybu:', replyError);
+        }
       }
     }
   }
