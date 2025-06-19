@@ -30,8 +30,16 @@ process.on('uncaughtException', error => {
   console.error('🔴 Nezachycená výjimka:', error);
 });
 
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => {
   console.log(`✅ Bot přihlášen jako ${client.user.tag}`);
+
+  try {
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    await channel.send('✅ Jsem online a připraven sloužit Přátelům Hranatého Stolu!');
+    console.log('📨 Potvrzení odesláno do kanálu.');
+  } catch (err) {
+    console.error('❌ Nepodařilo se odeslat zprávu do kanálu:', err);
+  }
 });
 
 client.on(Events.InteractionCreate, async interaction => {
